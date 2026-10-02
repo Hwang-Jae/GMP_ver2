@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Manufacturing & Logistics Digital Twin</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            900: '#050814', // Deepest background
+                            800: '#0a0f25', // Card background
+                            700: '#131b36', // Card hover / Light border
+                            600: '#1d284a', // Borders
+                        },
+                        neon: {
+                            blue: '#38bdf8',
+                            cyan: '#06b6d4',
+                            indigo: '#6366f1',
+                            green: '#10b981',
+                            yellow: '#f59e0b',
+                            red: '#ef4444',
+                            purple: '#a855f7'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+                    },
+                    animation: {
+                        'marquee': 'marquee 25s linear infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'ping-slow': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+                    },
+                    keyframes: {
+                        marquee: {
+                            '0%': { transform: 'translateX(100%)' },
+                            '100%': { transform: 'translateX(-100%)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #050814;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism & Borders */
+        .glass-panel {
+            background: rgba(10, 15, 37, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-header {
+            background: linear-gradient(90deg, rgba(19, 27, 54, 0.9) 0%, rgba(10, 15, 37, 0.8) 100%);
+            border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(19, 27, 54, 0.5); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
+
+        /* Ticker Tape */
+        .ticker-wrap {
+            width: 100%;
+            overflow: hidden;
+            background: #1e0b0b;
+            border-top: 1px solid #ef4444;
+            border-bottom: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 4px 0;
+            display: flex;
+            align-items: center;
+        }
+        .ticker-content {
+            display: flex;
+            white-space: nowrap;
+            padding-left: 100%;
+        }
+        .ticker-item { padding: 0 2rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.5px; }
+
+        /* Map Styles */
+        .map-svg { width: 100%; height: 100%; }
+        .node-group { cursor: pointer; transition: all 0.3s ease; }
+        .node-core { transition: all 0.3s ease; }
+        .node-ring { animation: ping-slow 2s infinite; transform-origin: center; opacity: 0; }
+        .node-group:hover .node-core { transform: scale(1.3); }
+        .node-label { font-size: 10px; font-weight: 600; fill: #cbd5e1; paint-order: stroke fill; stroke: #050814; stroke-width: 3px; }
+        .node-data { font-size: 9px; font-family: 'JetBrains Mono'; font-weight: 700; paint-order: stroke fill; stroke: #050814; stroke-width: 3px; }
+        
+        /* Health Colors */
+        .health-healthy .node-core { fill: #10b981; filter: drop-shadow(0 0 6px #10b981); }
+        .health-warning .node-core { fill: #f59e0b; filter: drop-shadow(0 0 8px #f59e0b); }
+        .health-warning .node-ring { stroke: #f59e0b; opacity: 1; }
+        .health-critical .node-core { fill: #ef4444; filter: drop-shadow(0 0 10px #ef4444); }
+        .health-critical .node-ring { stroke: #ef4444; opacity: 1; animation-duration: 1s; }
+        .health-offline .node-core { fill: #64748b; }
+
+        /* Selected State */
+        .node-group.selected .node-core { stroke: #fff; stroke-width: 2px; transform: scale(1.2); }
+        .node-group.selected .node-label { fill: #fff; font-size: 12px; }
+
+        /* IT Topology Lines */
+        .topology-line {
+            position: relative;
+        }
+        .topology-line::after {
+            content: ''; position: absolute; top: 50%; left: 100%; width: 24px; height: 2px;
+            background: rgba(148, 163, 184, 0.3); transform: translateY(-50%); z-index: 0;
+        }
+        .topology-line:last-child::after { display: none; }
+        
+        .topo-status-healthy::after { background: #10b981; box-shadow: 0 0 5px #10b981; }
+        .topo-status-warning::after { background: #f59e0b; box-shadow: 0 0 5px #f59e0b; animation: pulse 1.5s infinite; }
+        .topo-status-critical::after { background: #ef4444; box-shadow: 0 0 5px #ef4444; border-top: 2px dashed #050814;}
+
+        /* Prediction Bar */
+        .predict-bar-bg { background: #1e293b; border-radius: 999px; height: 12px; position: relative; overflow: visible; border: 1px solid #334155; }
+        .predict-bar-current { background: linear-gradient(90deg, #0ea5e9, #3b82f6); height: 100%; border-radius: 999px 0 0 999px; position: absolute; left: 0; top: 0; z-index: 2; transition: width 1s; }
+        .predict-bar-future { background: repeating-linear-gradient(45deg, #10b981, #10b981 10px, #059669 10px, #059669 20px); height: 100%; position: absolute; top: 0; z-index: 1; border-radius: 0 999px 999px 0; opacity: 0.8; transition: width 1s; }
+        .predict-bar-target { position: absolute; top: -4px; bottom: -4px; width: 4px; background: #fff; z-index: 3; box-shadow: 0 0 6px #fff; transition: left 1s; }
+        .predict-bar-deficit { background: repeating-linear-gradient(45deg, #ef4444, #ef4444 5px, #b91c1c 5px, #b91c1c 10px); height: 100%; position: absolute; top: 0; z-index: 1; border-radius: 0 999px 999px 0; opacity: 0.8; transition: width 1s; }
+
+    </style>
+</head>
+<body class="text-slate-300 h-screen flex flex-col">
+
+<!-- 🚨 Critical Alarm Ticker -->
+<div class="ticker-wrap shadow-[0_0_15px_rgba(239,68,68,0.2)] z-50">
+    <div class="ticker-content animate-marquee" id="alarm-ticker">
+        <span class="ticker-item"><i class="fa-solid fa-triangle-exclamation"></i> [CRITICAL] ULSAN PLANT - LINE 2 PLC INTERFACE DISCONNECTED</span>
+        <span class="ticker-item"><i class="fa-solid fa-bolt"></i> [MAJOR] SAVANNAH PORT (US) - LABOR STRIKE EXPECTED (+5 DAYS DELAY)</span>
+        <span class="ticker-item"><i class="fa-solid fa-triangle-exclamation"></i> [CRITICAL] CZECH PLANT - MATERIAL SHORTAGE PREDICTED IN 12 HOURS</span>
+    </div>
+</div>
+
+<!-- Header / Executive Mode -->
+<header class="glass-header px-6 py-3 flex justify-between items-center z-40 shrink-0">
+    <div class="flex items-center gap-4">
+        <div class="bg-blue-500/20 p-2 rounded-lg border border-blue-500/50 text-neon-blue">
+            <i class="fa-solid fa-satellite-dish text-xl animate-pulse"></i>
+        </div>
+        <div>
+            <h1 class="text-xl font-bold text-white tracking-wide">GLOBAL DIGITAL TWIN <span class="text-neon-blue font-mono text-sm ml-2 px-2 py-0.5 border border-neon-blue/30 rounded bg-neon-blue/10">v3.0</span></h1>
+            <p class="text-xs text-slate-400">Integrated Control Tower: Manufacturing, Logistics, IT Health & Risk Prediction</p>
+        </div>
+    </div>
+
+    <!-- Executive Summary KPIs (30s View) -->
+    <div class="hidden lg:flex items-center gap-6 mr-8">
+        <div class="flex flex-col items-end">
+            <span class="text-[10px] text-slate-400 uppercase tracking-wider">Global Target</span>
+            <span class="text-lg font-bold text-neon-green font-mono">92.4%</span>
+        </div>
+        <div class="w-px h-8 bg-slate-700"></div>
+        <div class="flex flex-col items-end">
+            <span class="text-[10px] text-slate-400 uppercase tracking-wider">Avg OEE</span>
+            <span class="text-lg font-bold text-neon-blue font-mono">84.7%</span>
+        </div>
+        <div class="w-px h-8 bg-slate-700"></div>
+        <div class="flex flex-col items-end">
+            <span class="text-[10px] text-slate-400 uppercase tracking-wider">Active Risks</span>
+            <span class="text-lg font-bold text-neon-red font-mono animate-pulse">11 Issues</span>
+        </div>
+    </div>
+
+    <!-- Controls & Clock -->
+    <div class="flex items-center gap-4">
+        <div class="text-right mr-4">
+            <div id="clock-time" class="text-xl font-bold font-mono text-white tracking-widest">00:00:00</div>
+            <div id="clock-date" class="text-xs text-slate-400 font-mono">YYYY-MM-DD</div>
+        </div>
+        <button id="btn-autocycle" onclick="toggleAutoCycle()" class="h-10 w-10 rounded-lg bg-indigo-500/20 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/40 transition-colors flex items-center justify-center" title="Auto-Cycle Plants">
+            <i class="fa-solid fa-rotate"></i>
+        </button>
+        <button onclick="toggleFullScreen()" class="h-10 w-10 rounded-lg bg-slate-800 border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors flex items-center justify-center" title="Full Screen">
+            <i class="fa-solid fa-expand"></i>
+        </button>
+    </div>
+</header>
+
+<!-- Main Workspace -->
+<main class="flex-1 flex flex-col lg:flex-row gap-4 p-4 overflow-hidden">
+    
+    <!-- LEFT COLUMN: Global Map & Rankings -->
+    <div class="flex flex-col gap-4 w-full lg:w-[35%] shrink-0 h-full">
+        
+        <!-- Global Health Map -->
+        <section class="glass-panel rounded-xl flex flex-col h-[60%] relative overflow-hidden">
+            <div class="p-3 border-b border-dark-600 flex justify-between items-center bg-dark-800/50">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-earth-americas text-neon-cyan"></i> GLOBAL HEALTH MAP</h2>
+                <div class="flex gap-2 text-[10px] font-mono">
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-neon-green"></span> 정상</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-neon-yellow"></span> 주의</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-neon-red"></span> 위험</span>
+                </div>
+            </div>
+            <div class="flex-1 relative bg-[#03050a]" id="map-container">
+                <svg id="svg-map" class="map-svg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+                    <!-- Base Map Shapes -->
+                    <path d="M150,150 Q180,110 250,120 T350,220 T250,300 T180,450 T280,550 T330,400 T200,320 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <path d="M450,150 Q500,100 580,130 T650,250 T500,280 T420,200 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <path d="M600,120 Q800,100 900,150 T880,300 T750,350 T650,280 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <path d="M430,300 Q500,280 550,400 T480,500 T400,350 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <path d="M650,350 Q680,320 720,400 T680,450 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <path d="M800,400 Q850,380 900,450 T850,550 T780,450 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+                    <!-- Dynamic Nodes rendered by JS -->
+                </svg>
+            </div>
+        </section>
+
+        <!-- Factory Rankings -->
+        <section class="glass-panel rounded-xl flex flex-col flex-1 overflow-hidden">
+            <div class="p-3 border-b border-dark-600 flex justify-between items-center bg-dark-800/50">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-trophy text-neon-yellow"></i> INSIGHT RANKINGS</h2>
+                <select id="rank-type" class="bg-dark-900 border border-dark-600 text-xs px-2 py-1 rounded outline-none text-neon-blue font-mono" onchange="renderRankings()">
+                    <option value="oee">OEE TOP 5</option>
+                    <option value="target">달성률 TOP 5</option>
+                    <option value="downtime">Downtime Worst 5</option>
+                </select>
+            </div>
+            <div class="p-2 overflow-y-auto flex-1" id="ranking-container">
+                <!-- Ranks injected via JS -->
+            </div>
+        </section>
+
+    </div>
+
+    <!-- CENTER COLUMN: Production Details, Prediction & IT Topology -->
+    <div class="flex flex-col gap-4 w-full lg:w-[35%] shrink-0 h-full">
+        
+        <!-- Deep Drill-Down Header -->
+        <section class="glass-panel rounded-xl p-4 flex flex-col gap-2 bg-gradient-to-br from-dark-800 to-dark-900">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h2 id="detail-name" class="text-xl font-bold text-white tracking-tight">ULSAN PLANT</h2>
+                    <p id="detail-sub" class="text-xs text-slate-400 font-mono mt-1">KR_REGION | CODE: 1100</p>
+                </div>
+                <div id="detail-status-badge" class="px-3 py-1 rounded text-xs font-bold font-mono border bg-red-500/20 text-red-400 border-red-500">
+                    CRITICAL
+                </div>
+            </div>
+        </section>
+
+        <!-- 🔮 AI Production Target Prediction -->
+        <section class="glass-panel rounded-xl flex flex-col p-4 gap-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-crystal-ball text-neon-purple"></i> AI PREDICTION ENGINE</h2>
+                <span class="text-[10px] font-mono text-slate-400 bg-dark-900 px-2 py-1 rounded border border-dark-600">Sync: Real-Time</span>
+            </div>
+            
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="bg-dark-900/50 rounded p-2 border border-dark-600">
+                    <p class="text-[10px] text-slate-400 uppercase">Target (목표)</p>
+                    <p id="pred-target" class="text-lg font-mono font-bold text-white">2,700</p>
+                </div>
+                <div class="bg-dark-900/50 rounded p-2 border border-dark-600">
+                    <p class="text-[10px] text-slate-400 uppercase">Current (현재)</p>
+                    <p id="pred-current" class="text-lg font-mono font-bold text-neon-blue">2,350</p>
+                </div>
+                <div class="bg-dark-900/50 rounded p-2 border border-dark-600">
+                    <p class="text-[10px] text-slate-400 uppercase">Predicted (예상)</p>
+                    <p id="pred-future" class="text-lg font-mono font-bold text-neon-yellow">2,640</p>
+                </div>
+            </div>
+
+            <!-- Visual Bar -->
+            <div class="mt-2">
+                <div class="flex justify-between text-[10px] font-mono text-slate-400 mb-1">
+                    <span>0</span>
+                    <span id="pred-msg" class="text-neon-red font-bold animate-pulse">⚠️ 목표 미달 예상 (-60 EA)</span>
+                    <span id="pred-target-label">2,700</span>
+                </div>
+                <div class="predict-bar-bg">
+                    <div id="bar-current" class="predict-bar-current" style="width: 70%;"></div>
+                    <div id="bar-future" class="predict-bar-future" style="left: 70%; width: 25%;"></div>
+                    <div id="bar-deficit" class="predict-bar-deficit hidden" style="left: 95%; width: 5%;"></div>
+                    <div id="bar-target" class="predict-bar-target" style="left: 95%;"></div>
+                </div>
+                <div class="flex justify-between mt-2 text-[10px] text-slate-500">
+                    <span>Current Speed: <span id="pred-speed" class="text-slate-300 font-mono">1.2 EA/min</span></span>
+                    <span>Remaining Time: <span id="pred-time" class="text-slate-300 font-mono">4h 15m</span></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 🔌 SAP/MES Interface Topology -->
+        <section class="glass-panel rounded-xl flex flex-col flex-1 overflow-hidden">
+            <div class="p-3 border-b border-dark-600 bg-dark-800/50">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-network-wired text-neon-blue"></i> IT INTERFACE TOPOLOGY</h2>
+            </div>
+            <div class="p-4 flex-1 flex flex-col justify-center gap-6">
+                <!-- Network Graph -->
+                <div class="flex items-center justify-between px-2" id="topology-container">
+                    <!-- Rendered via JS -->
+                </div>
+                
+                <!-- Interface Metrics -->
+                <div class="bg-dark-900 border border-dark-600 rounded p-3 text-xs font-mono text-slate-400 h-24 overflow-y-auto" id="topology-logs">
+                    <!-- Logs injected via JS -->
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- RIGHT COLUMN: Unified Alarms & CKD Logistics -->
+    <div class="flex flex-col gap-4 w-full lg:w-[30%] shrink-0 h-full">
+        
+        <!-- 🚨 Unified Alarm Center -->
+        <section class="glass-panel rounded-xl flex flex-col h-[50%] overflow-hidden border-t-2 border-t-neon-red/50">
+            <div class="p-3 border-b border-dark-600 flex justify-between items-center bg-dark-800/50">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-bell text-neon-red"></i> UNIFIED ALARM CENTER</h2>
+                <span class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/50">Live</span>
+            </div>
+            <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2" id="alarm-list">
+                <!-- Alarms injected via JS -->
+            </div>
+        </section>
+
+        <!-- 🚢 Deep CKD Logistics Risk -->
+        <section class="glass-panel rounded-xl flex flex-col flex-1 overflow-hidden">
+            <div class="p-3 border-b border-dark-600 flex justify-between items-center bg-dark-800/50">
+                <h2 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-ship text-neon-blue"></i> LOGISTICS RISK (CKD)</h2>
+                <span id="logistics-risk-badge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/50">WARNING</span>
+            </div>
+            <div class="p-3 flex-1 overflow-y-auto flex flex-col gap-4" id="logistics-container">
+                <!-- Rendered via JS -->
+            </div>
+        </section>
+
+    </div>
+</main>
+
+<script>
+    // -------------------------------------------------------------
+    // DIGITAL TWIN MASTER STATE & DATA
+    // -------------------------------------------------------------
+    
+    // Core structure linking Plant -> Production -> Equip -> IT -> CKD
+    const DIGITAL_TWIN_DATA = {
+        "kr_ulsan": {
+            id: "kr_ulsan", name: "Ulsan Plant", type: "plant", region: "korea", coords: { x: 830, y: 285 },
+            health: "critical", // healthy, warning, critical, offline
+            production: { target: 2700, current: 2350, speed: 1.1, timeRemMins: 255 },
+            oee: 72.4, downtimeMin: 142,
+            topology: [
+                { name: "SAP ERP", status: "healthy", latency: "12ms" },
+                { name: "ESB", status: "healthy", latency: "18ms" },
+                { name: "MES", status: "warning", latency: "450ms" },
+                { name: "PLC/IoT", status: "critical", latency: "TIMEOUT", error: "Connection Refused - Line 2 Controller" }
+            ],
+            alarms: [
+                { type: "IT", severity: "critical", msg: "Line 2 PLC Interface Disconnected", time: "Just Now", status: "New" },
+                { type: "Production", severity: "warning", msg: "Target Shortfall Projected (-65 EA)", time: "10m ago", status: "Ack" },
+                { type: "Equipment", severity: "major", msg: "Press Machine Temp High", time: "1h ago", status: "Ack" }
+            ],
+            logistics: [
+                { po: "PO-U1002", vessel: "HMM Algeciras", from: "Ningbo", to: "Ulsan", etd: "08-10", eta: "08-14", status: "Customs", delay: 0, impact: "None" }
+            ]
+        },
+        "am_nvh_usa": {
+            id: "am_nvh_usa", name: "Savannah Plant (US)", type: "plant", region: "america", coords: { x: 260, y: 265 },
+            health: "warning",
+            production: { target: 1600, current: 1100, speed: 1.5, timeRemMins: 320 },
+            oee: 88.5, downtimeMin: 24,
+            topology: [
+                { name: "SAP ERP", status: "healthy", latency: "45ms" },
+                { name: "ESB", status: "healthy", latency: "50ms" },
+                { name: "MES", status: "healthy", latency: "60ms" },
+                { name: "PLC/IoT", status: "healthy", latency: "10ms" }
+            ],
+            alarms: [
+                { type: "Logistics", severity: "major", msg: "Port Strike Risk - Inbound CKD delayed", time: "2h ago", status: "Ack" },
+                { type: "Material", severity: "warning", msg: "Safety Stock Low (Bumper Assy)", time: "5h ago", status: "Resolved" }
+            ],
+            logistics: [
+                { po: "PO-A4401", vessel: "ONE Juniper", from: "Incheon", to: "Savannah", etd: "07-20", eta: "08-15 (Delayed)", status: "In Transit", delay: 5, impact: "Line Stoppage Risk in 48h" },
+                { po: "PO-A4402", vessel: "Maersk Ohio", from: "Busan", to: "Savannah", etd: "07-25", eta: "08-20", status: "In Transit", delay: 0, impact: "None" }
+            ]
+        },
+        "eu_czech": {
+            id: "eu_czech", name: "Nosovice Plant (CZ)", type: "plant", region: "europe", coords: { x: 495, y: 180 },
+            health: "critical",
+            production: { target: 1400, current: 800, speed: 0.8, timeRemMins: 400 },
+            oee: 65.2, downtimeMin: 210,
+            topology: [
+                { name: "SAP ERP", status: "healthy", latency: "30ms" },
+                { name: "ESB", status: "healthy", latency: "35ms" },
+                { name: "MES", status: "healthy", latency: "40ms" },
+                { name: "PLC/IoT", status: "healthy", latency: "15ms" }
+            ],
+            alarms: [
+                { type: "Equipment", severity: "critical", msg: "Main Press Breakdown", time: "3h ago", status: "Actioning" },
+                { type: "Production", severity: "critical", msg: "Severe Target Shortfall (-280 EA)", time: "1h ago", status: "Ack" }
+            ],
+            logistics: [
+                { po: "PO-E992", vessel: "MSC Ambra", from: "Busan", to: "Koper", etd: "07-15", eta: "08-12", status: "Port Discharge", delay: 2, impact: "Managed via buffer" }
+            ]
+        },
+        "in_chennai": {
+            id: "in_chennai", name: "Chennai Plant (IN)", type: "plant", region: "india", coords: { x: 665, y: 370 },
+            health: "healthy",
+            production: { target: 1200, current: 950, speed: 1.4, timeRemMins: 180 },
+            oee: 94.1, downtimeMin: 12,
+            topology: [
+                { name: "SAP", status: "healthy", latency: "80ms" },
+                { name: "MES", status: "healthy", latency: "95ms" },
+                { name: "PLC", status: "healthy", latency: "20ms" }
+            ],
+            alarms: [
+                { type: "Quality", severity: "warning", msg: "Paint defect rate slightly up", time: "4h ago", status: "Resolved" }
+            ],
+            logistics: [
+                { po: "PO-I302", vessel: "HMM Le Havre", from: "Busan", to: "Chennai", etd: "08-01", eta: "08-14", status: "In Transit", delay: 0, impact: "None" }
+            ]
+        },
+        "cn_yangzhou": {
+            id: "cn_yangzhou", name: "Yangzhou (CN)", type: "plant", region: "china", coords: { x: 760, y: 245 },
+            health: "healthy",
+            production: { target: 1300, current: 1100, speed: 1.2, timeRemMins: 180 },
+            oee: 91.5, downtimeMin: 15,
+            topology: [
+                { name: "SAP", status: "healthy", latency: "25ms" },
+                { name: "MES", status: "healthy", latency: "30ms" },
+                { name: "PLC", status: "healthy", latency: "10ms" }
+            ],
+            alarms: [],
+            logistics: []
+        },
+        "global_hq": {
+            id: "global_hq", name: "Global R&BD HQ", type: "rnd", region: "korea", coords: { x: 795, y: 220 },
+            health: "healthy",
+            production: { target: 100, current: 100, speed: 0, timeRemMins: 0 },
+            oee: 99.9, downtimeMin: 0,
+            topology: [
+                { name: "SAP", status: "healthy", latency: "5ms" },
+                { name: "MES", status: "healthy", latency: "5ms" }
+            ],
+            alarms: [], logistics: []
+        }
+    };
+
+    let currentPlantId = "kr_ulsan";
+    let autoCycleInterval = null;
+    let isAutoCycling = true;
+    const plantIds = Object.keys(DIGITAL_TWIN_DATA).filter(id => DIGITAL_TWIN_DATA[id].type === 'plant');
+    let cycleIndex = 0;
+
+    function renderGlobalMap() {
+        const svg = document.getElementById('svg-map');
+        // Keep base paths, remove old nodes
+        Array.from(svg.querySelectorAll('.node-group')).forEach(el => el.remove());
+
+        Object.values(DIGITAL_TWIN_DATA).forEach(plant => {
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("class", `node-group health-${plant.health} ${plant.id === currentPlantId ? 'selected' : ''}`);
+            g.setAttribute("transform", `translate(${plant.coords.x}, ${plant.coords.y})`);
+            g.onclick = () => selectPlant(plant.id);
+
+            // Ring (Animation)
+            const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            ring.setAttribute("class", "node-ring");
+            ring.setAttribute("r", "16");
+            ring.setAttribute("fill", "none");
+            ring.setAttribute("stroke-width", "1.5");
+            g.appendChild(ring);
+
+            // Core Shape
+            if (plant.type === 'rnd') {
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rect.setAttribute("class", "node-core");
+                rect.setAttribute("x", "-5"); rect.setAttribute("y", "-5");
+                rect.setAttribute("width", "10"); rect.setAttribute("height", "10");
+                rect.setAttribute("transform", "rotate(45)");
+                g.appendChild(rect);
+            } else {
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("class", "node-core");
+                circle.setAttribute("r", "5");
+                g.appendChild(circle);
+            }
+
+            // Label
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("class", "node-label");
+            text.setAttribute("x", "12"); text.setAttribute("y", "4");
+            text.textContent = plant.name;
+            g.appendChild(text);
+
+            // Data overlay (OEE)
+            if(plant.type === 'plant') {
+                const dataText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                dataText.setAttribute("class", "node-data");
+                dataText.setAttribute("x", "12"); dataText.setAttribute("y", "16");
+                dataText.setAttribute("fill", plant.health === 'critical' ? '#ef4444' : plant.health === 'warning' ? '#f59e0b' : '#38bdf8');
+                dataText.textContent = `OEE: ${plant.oee}%`;
+                g.appendChild(dataText);
+            }
+
+            svg.appendChild(g);
+        });
+    }
+
+    function updatePredictionEngine(plant) {
+        const prod = plant.production;
+        document.getElementById('detail-name').innerText = plant.name.toUpperCase();
+        document.getElementById('detail-sub').innerText = `${plant.id.toUpperCase()} | Health: ${plant.health.toUpperCase()}`;
+        
+        const badge = document.getElementById('detail-status-badge');
+        badge.innerText = plant.health.toUpperCase();
+        badge.className = `px-3 py-1 rounded text-xs font-bold font-mono border ${
+            plant.health === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500 animate-pulse' :
+            plant.health === 'warning' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500' :
+            'bg-green-500/20 text-green-400 border-green-500'
+        }`;
+
+        document.getElementById('pred-target').innerText = prod.target.toLocaleString();
+        document.getElementById('pred-current').innerText = prod.current.toLocaleString();
+        
+        const predicted = Math.round(prod.current + (prod.speed * prod.timeRemMins));
+        document.getElementById('pred-future').innerText = predicted.toLocaleString();
+
+        const diff = predicted - prod.target;
+        const msgEl = document.getElementById('pred-msg');
+        
+        let currentPct = (prod.current / prod.target) * 100;
+        let futurePct = ((predicted - prod.current) / prod.target) * 100;
+        let deficitPct = 0;
+
+        if (diff < 0) {
+            msgEl.innerText = `⚠️ Shortfall Projected (${diff} EA)`;
+            msgEl.className = "text-neon-red font-bold animate-pulse";
+            document.getElementById('pred-future').className = "text-lg font-mono font-bold text-neon-red";
+            deficitPct = Math.abs(diff / prod.target) * 100;
+            document.getElementById('bar-deficit').classList.remove('hidden');
+        } else {
+            msgEl.innerText = `✅ Target Achievable (+${diff} EA)`;
+            msgEl.className = "text-neon-green font-bold";
+            document.getElementById('pred-future').className = "text-lg font-mono font-bold text-neon-green";
+            document.getElementById('bar-deficit').classList.add('hidden');
+            if(currentPct + futurePct > 100) futurePct = 100 - currentPct; // Cap at 100% for visual
+        }
+
+        document.getElementById('bar-current').style.width = `${currentPct}%`;
+        document.getElementById('bar-future').style.left = `${currentPct}%`;
+        document.getElementById('bar-future').style.width = `${futurePct}%`;
+        
+        if(diff < 0) {
+            document.getElementById('bar-deficit').style.left = `${currentPct + futurePct}%`;
+            document.getElementById('bar-deficit').style.width = `${deficitPct}%`;
+        }
+
+        document.getElementById('pred-speed').innerText = `${prod.speed} EA/min`;
+        document.getElementById('pred-time').innerText = `${Math.floor(prod.timeRemMins/60)}h ${prod.timeRemMins%60}m`;
+    }
+
+    function updateTopology(plant) {
+        const container = document.getElementById('topology-container');
+        const logContainer = document.getElementById('topology-logs');
+        container.innerHTML = '';
+        logContainer.innerHTML = '';
+
+        plant.topology.forEach((node, idx) => {
+            // Node UI
+            const wrapper = document.createElement('div');
+            wrapper.className = `topology-line flex-1 flex flex-col items-center topo-status-${node.status}`;
+            
+            const iconBg = node.status === 'critical' ? 'bg-red-500/20 text-red-500 border-red-500 shadow-[0_0_10px_#ef4444]' :
+                           node.status === 'warning' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500 shadow-[0_0_10px_#f59e0b]' :
+                           'bg-green-500/20 text-green-500 border-green-500';
+                           
+            const icon = node.name.includes('SAP') ? 'fa-server' : node.name.includes('ESB') ? 'fa-network-wired' : node.name.includes('MES') ? 'fa-database' : 'fa-microchip';
+
+            wrapper.innerHTML = `
+                <div class="w-10 h-10 rounded-lg border-2 flex items-center justify-center z-10 bg-dark-900 ${iconBg}">
+                    <i class="fa-solid ${icon}"></i>
+                </div>
+                <span class="text-[10px] font-bold mt-2 text-slate-300">${node.name}</span>
+                <span class="text-[9px] font-mono ${node.status === 'critical' ? 'text-red-500' : 'text-slate-500'}">${node.latency}</span>
+            `;
+            container.appendChild(wrapper);
+
+            // Logs
+            const logLine = document.createElement('div');
+            logLine.className = `mb-1 ${node.status === 'critical' ? 'text-red-400' : node.status === 'warning' ? 'text-yellow-400' : 'text-slate-400'}`;
+            logLine.innerHTML = `> PING ${node.name}... [${node.status.toUpperCase()}] ${node.latency} ${node.error ? ' - ' + node.error : ''}`;
+            logContainer.appendChild(logLine);
+        });
+    }
+
+    function updateAlarmsAndLogistics(plant) {
+        // Alarms
+        const alarmList = document.getElementById('alarm-list');
+        alarmList.innerHTML = '';
+        
+        if (plant.alarms.length === 0) {
+            alarmList.innerHTML = '<div class="text-center text-slate-500 text-xs py-4">No active alarms.</div>';
+        } else {
+            plant.alarms.forEach(al => {
+                const color = al.severity === 'critical' ? 'text-red-400 border-red-500/30 bg-red-500/10' :
+                              al.severity === 'major' ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' :
+                              'text-blue-400 border-blue-500/30 bg-blue-500/10';
+                alarmList.innerHTML += `
+                    <div class="flex flex-col p-2 rounded border ${color}">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-[10px] font-bold uppercase"><i class="fa-solid fa-circle-exclamation mr-1"></i> ${al.type} | ${al.severity}</span>
+                            <span class="text-[9px]">${al.time}</span>
+                        </div>
+                        <p class="text-xs font-mono">${al.msg}</p>
+                        <div class="text-right mt-1"><span class="text-[9px] px-1.5 py-0.5 bg-dark-900 rounded border border-dark-600 text-slate-300">Status: ${al.status}</span></div>
+                    </div>
+                `;
+            });
+        }
+
+        // Logistics
+        const logContainer = document.getElementById('logistics-container');
+        logContainer.innerHTML = '';
+        const badge = document.getElementById('logistics-risk-badge');
+
+        if (plant.logistics.length === 0) {
+            logContainer.innerHTML = '<div class="text-center text-slate-500 text-xs py-4">No inbound CKD tracking active.</div>';
+            badge.className = "text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/50";
+            badge.innerText = "NORMAL";
+        } else {
+            let maxRisk = 'normal';
+            plant.logistics.forEach(lg => {
+                if (lg.delay > 0) maxRisk = lg.delay > 3 ? 'critical' : 'warning';
+                const borderColor = lg.delay > 3 ? 'border-red-500/50' : lg.delay > 0 ? 'border-yellow-500/50' : 'border-dark-600';
+                const iconColor = lg.delay > 3 ? 'text-red-400' : lg.delay > 0 ? 'text-yellow-400' : 'text-blue-400';
+                
+                logContainer.innerHTML += `
+                    <div class="flex flex-col p-3 rounded-lg border ${borderColor} bg-dark-900/50">
+                        <div class="flex justify-between items-center border-b border-dark-600 pb-2 mb-2">
+                            <span class="font-bold text-xs text-white"><i class="fa-solid fa-file-invoice ${iconColor} mr-1"></i> ${lg.po}</span>
+                            <span class="text-[10px] text-slate-400 font-mono">${lg.status}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px] mb-2">
+                            <div class="text-center"><p class="text-slate-500">POL (${lg.etd})</p><p class="font-bold">${lg.from}</p></div>
+                            <div class="flex-1 px-2 relative flex items-center justify-center">
+                                <div class="w-full h-px bg-slate-700"></div>
+                                <i class="fa-solid fa-ship absolute ${iconColor} bg-dark-900 px-1 text-xs"></i>
+                            </div>
+                            <div class="text-center"><p class="text-slate-500">POD (${lg.eta})</p><p class="font-bold">${lg.to}</p></div>
+                        </div>
+                        <div class="bg-dark-800 p-2 rounded text-[10px] font-mono flex justify-between">
+                            <span class="text-slate-400">Vessel: ${lg.vessel}</span>
+                            ${lg.delay > 0 ? `<span class="text-red-400 font-bold">+${lg.delay} Days (Impact: ${lg.impact})</span>` : `<span class="text-green-400">On Schedule</span>`}
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (maxRisk === 'critical') {
+                badge.className = "text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse";
+                badge.innerText = "CRITICAL DELAY";
+            } else if (maxRisk === 'warning') {
+                badge.className = "text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/50";
+                badge.innerText = "WARNING";
+            } else {
+                badge.className = "text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/50";
+                badge.innerText = "ON TRACK";
+            }
+        }
+    }
+
+    function selectPlant(id) {
+        currentPlantId = id;
+        const plant = DIGITAL_TWIN_DATA[id];
+        renderGlobalMap(); // update selected state
+        updatePredictionEngine(plant);
+        updateTopology(plant);
+        updateAlarmsAndLogistics(plant);
+        
+        // Pause auto-cycle briefly if manually clicked
+        if(isAutoCycling && event && event.isTrusted) {
+            pauseAutoCycle();
+        }
+    }
+
+    function renderRankings() {
+        const type = document.getElementById('rank-type').value;
+        const container = document.getElementById('ranking-container');
+        container.innerHTML = '';
+
+        let sorted = Object.values(DIGITAL_TWIN_DATA).filter(p => p.type === 'plant');
+        
+        if(type === 'oee') sorted.sort((a,b) => b.oee - a.oee);
+        else if(type === 'target') sorted.sort((a,b) => (b.production.current/b.production.target) - (a.production.current/a.production.target));
+        else if(type === 'downtime') sorted.sort((a,b) => b.downtimeMin - a.downtimeMin);
+
+        sorted.slice(0,5).forEach((p, idx) => {
+            let valStr = type === 'oee' ? `${p.oee}%` : type === 'target' ? `${((p.production.current/p.production.target)*100).toFixed(1)}%` : `${p.downtimeMin} min`;
+            container.innerHTML += `
+                <div class="flex justify-between items-center p-2 border-b border-dark-600/50 hover:bg-dark-700/50 cursor-pointer transition-colors" onclick="selectPlant('${p.id}')">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-mono text-slate-500 w-4">${idx+1}.</span>
+                        <span class="text-xs font-bold text-slate-200">${p.name}</span>
+                    </div>
+                    <span class="text-xs font-mono font-bold text-neon-blue">${valStr}</span>
+                </div>
+            `;
+        });
+    }
+
+    // Real-time Clock
+    setInterval(() => {
+        const now = new Date();
+        document.getElementById('clock-time').innerText = now.toLocaleTimeString('en-US', {hour12: false});
+        document.getElementById('clock-date').innerText = now.toISOString().split('T')[0];
+    }, 1000);
+
+    // Auto Cycle Logic (For Control Room Fullscreen)
+    function cyclePlants() {
+        if (!isAutoCycling) return;
+        cycleIndex = (cycleIndex + 1) % plantIds.length;
+        selectPlant(plantIds[cycleIndex]);
+    }
+
+    function toggleAutoCycle() {
+        const btn = document.getElementById('btn-autocycle');
+        isAutoCycling = !isAutoCycling;
+        if (isAutoCycling) {
+            btn.className = "h-10 w-10 rounded-lg bg-indigo-500/20 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/40 transition-colors flex items-center justify-center";
+            btn.innerHTML = '<i class="fa-solid fa-rotate animate-spin-slow"></i>';
+            autoCycleInterval = setInterval(cyclePlants, 10000); // 10 seconds per plant
+        } else {
+            btn.className = "h-10 w-10 rounded-lg bg-slate-800 border border-slate-600 text-slate-500 hover:bg-slate-700 transition-colors flex items-center justify-center";
+            btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            clearInterval(autoCycleInterval);
+        }
+    }
+
+    function pauseAutoCycle() {
+        clearInterval(autoCycleInterval);
+        setTimeout(() => {
+            if(isAutoCycling) autoCycleInterval = setInterval(cyclePlants, 10000);
+        }, 15000); // resume after 15s of inactivity
+    }
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+
+    // Init
+    window.onload = () => {
+        renderGlobalMap();
+        renderRankings();
+        selectPlant(currentPlantId);
+        // Start auto-cycle
+        autoCycleInterval = setInterval(cyclePlants, 10000);
+    };
+
+</script>
+</body>
+</html>
